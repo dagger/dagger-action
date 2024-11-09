@@ -75,15 +75,42 @@ runs:
         INPUT_MODULE: ${{ inputs.module }}
       run: |
         tmpout=$(mktemp)
-        cd ${{ inputs.workdir }} && { \
+        tmperr=$(mktemp)
+      
+        cd ${{ inputs.workdir }} && {
         DAGGER_CLOUD_TOKEN=${{ inputs.cloud-token }} \
         dagger \
         ${{ inputs.dagger-flags }} \
         ${{ inputs.verb }} \
         ${INPUT_MODULE:+-m $INPUT_MODULE} \
-        ${{ inputs.args }}; } | tee "${tmpout}"
+        ${{ inputs.args }}
+        } > >(tee "${tmpout}") 2> >(tee "${tmperr}" >&2)
 
+        # Send stdout to GITHUB_OUTPUT
         (echo -n "stdout=" && cat "${tmpout}") >> "$GITHUB_OUTPUT"
+        
+        # Set up ANSI to HTML converter
+        sudo npm install -g ansi-to-html
+
+        # Append formatted stdout to GITHUB_STEP_SUMMARY
+        {
+          echo "### Dagger stdout"
+          echo ""
+          echo -n "<pre><code>"
+          cat "${tmpout}"
+          echo "</code></pre>"
+          echo ""
+        } >> $GITHUB_STEP_SUMMARY
+
+        # Append formatted stderr to GITHUB_STEP_SUMMARY
+        {
+          echo "### Dagger stderr"
+          echo ""
+          echo -n "<pre><code>"
+          ansi-to-html < "${tmperr}"
+          echo "</code></pre>"
+          echo ""
+        } >> $GITHUB_STEP_SUMMARY
 
     - if: inputs.engine-stop == 'true'
       shell: bash
